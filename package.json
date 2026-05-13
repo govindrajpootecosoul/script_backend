@@ -1,0 +1,22 @@
+{
+  "name": "script-control-backend",
+  "version": "1.0.0",
+  "description": "Central hub for script control — Express, Socket.io, MongoDB",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.8.3",
+    "socket.io": "^4.8.1"
+  }
+}
