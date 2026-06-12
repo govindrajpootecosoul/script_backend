@@ -6,18 +6,20 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true },
     /** Updated by Electron agent while connected; used for dashboard when Socket.io hits another serverless instance. */
     agentHeartbeatAt: { type: Date, default: null },
-    /** Queued when web triggers run via REST (Vercel / no sticky Socket.io). */
-    pendingAgentCommand: {
-      type: new mongoose.Schema(
-        {
-          scriptId: String,
-          name: String,
-          path: String,
-          scriptType: String,
-          queuedAt: Date,
-        },
-        { _id: false }
-      ),
+    /** Queued when web triggers run via REST (Vercel / no sticky Socket.io). Supports multiple Run clicks. */
+    pendingAgentCommands: {
+      type: [
+        new mongoose.Schema(
+          {
+            scriptId: String,
+            name: String,
+            path: String,
+            scriptType: String,
+            queuedAt: Date,
+          },
+          { _id: false }
+        ),
+      ],
       default: undefined,
     },
   },

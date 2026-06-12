@@ -3,7 +3,7 @@ const Script = require('../models/Script');
 const { authMiddleware } = require('../middleware/auth');
 const { isAgentOnlineForUser, queueAgentCommand } = require('../lib/agentPresence');
 
-function createScriptsRoutes({ agentSockets, applyScriptStatus }) {
+function createScriptsRoutes({ agentSockets, applyScriptStatus, clearIdleResetTimer }) {
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -85,6 +85,7 @@ router.post('/:id/run', async (req, res) => {
     if (!online) {
       return res.status(503).json({ error: 'Agent offline — start the Electron app and sign in.' });
     }
+    clearIdleResetTimer(script._id.toString());
     await queueAgentCommand(req.userId, script);
     const statusResult = await applyScriptStatus(req.userId, {
       scriptId: script._id.toString(),

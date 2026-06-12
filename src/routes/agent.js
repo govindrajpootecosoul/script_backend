@@ -2,7 +2,7 @@ const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const {
   touchAgentHeartbeat,
-  claimPendingCommand,
+  claimPendingCommands,
 } = require('../lib/agentPresence');
 
 function createAgentRoutes({ applyScriptStatus }) {
@@ -13,8 +13,12 @@ function createAgentRoutes({ applyScriptStatus }) {
   router.post('/heartbeat', async (req, res) => {
     try {
       await touchAgentHeartbeat(req.userId);
-      const command = await claimPendingCommand(req.userId);
-      res.json({ ok: true, command });
+      const commands = await claimPendingCommands(req.userId);
+      res.json({
+        ok: true,
+        commands,
+        command: commands[0] || null,
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Heartbeat failed' });

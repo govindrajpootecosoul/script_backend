@@ -80,7 +80,7 @@ function clearIdleResetTimer(scriptId) {
 function scheduleAutoIdleAfterTerminal(scriptId, userId, terminalStatus) {
   const key = String(scriptId);
   clearIdleResetTimer(key);
-  const delayMs = terminalStatus === 'success' ? 2000 : 5000;
+  const delayMs = terminalStatus === 'success' ? 1000 : 3000;
   const t = setTimeout(async () => {
     idleResetTimers.delete(key);
     try {
@@ -122,7 +122,10 @@ const applyScriptStatus = createScriptStatusHandlers({
   clearIdleResetTimer,
 });
 
-app.use('/api/scripts', createScriptsRoutes({ agentSockets, applyScriptStatus }));
+app.use(
+  '/api/scripts',
+  createScriptsRoutes({ agentSockets, applyScriptStatus, clearIdleResetTimer })
+);
 app.use('/api/agent', createAgentRoutes({ applyScriptStatus }));
 
 /** In-memory socket map is wrong across Vercel instances; DB heartbeat is source of truth for “online”. */
