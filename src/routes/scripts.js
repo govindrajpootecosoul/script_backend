@@ -1,7 +1,9 @@
 const express = require('express');
 const Script = require('../models/Script');
 const { authMiddleware } = require('../middleware/auth');
+const { isAgentOnlineForUser, queueAgentCommand } = require('../lib/agentPresence');
 
+function createScriptsRoutes({ agentSockets, applyScriptStatus }) {
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -72,4 +74,27 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
+/** REST run — used when Socket.io is unavailable (e.g. Vercel serverless). */
+router.post('/:id/run', async (req, res) => {
+  try {
+    const script = await Script.findOne({ _id: req.params.id, userId: req.userId });
+    if (!script) {
+      return res.status(404).json({ error: 'Script not found' });
+    }
+    const online = await isAgentOnlineForUser(req.userId, agentSockets);
+    if (!online) {
+      return res.status(503).json({ error: 'Agent offline — start the Electron app and sign in.' });
+    }
+    await queueAgentCommand(req.userId, script);
+    await applyScriptStatus(req.userId, { scriptId: script._id.toString(), status: 'running' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to run script' });
+  }
+});
+
+return router;
+}
+
+module.exports = createScriptsRoutes;

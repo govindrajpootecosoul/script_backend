@@ -7,9 +7,13 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const { connectDb } = require('./db');
 const authRoutes = require('./routes/auth');
-const scriptsRoutes = require('./routes/scripts');
+const createScriptsRoutes = require('./routes/scripts');
+const { createAgentRoutes } = require('./routes/agent');
 const Script = require('./models/Script');
-const { verifySocketToken } = require('./middleware/auth');
+const User = require('./models/User');
+const { verifySocketToken, authMiddleware } = require('./middleware/auth');
+const { isAgentOnlineForUser: checkAgentOnline, touchAgentHeartbeat } = require('./lib/agentPresence');
+const { createScriptStatusHandlers } = require('./lib/scriptStatus');
 
 const PORT = Number(process.env.PORT) || 3000;
 const LISTEN_HOST = process.env.LISTEN_HOST || '0.0.0.0';
@@ -102,7 +106,6 @@ app.use(express.json());
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', authRoutes);
-app.use('/api/scripts', scriptsRoutes);
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -111,6 +114,30 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
     credentials: true,
   },
+});
+
+const applyScriptStatus = createScriptStatusHandlers({
+  io,
+  scheduleAutoIdleAfterTerminal,
+  clearIdleResetTimer,
+});
+
+app.use('/api/scripts', createScriptsRoutes({ agentSockets, applyScriptStatus }));
+app.use('/api/agent', createAgentRoutes({ applyScriptStatus }));
+
+/** In-memory socket map is wrong across Vercel instances; DB heartbeat is source of truth for “online”. */
+async function isAgentOnlineForUser(uid) {
+  return checkAgentOnline(uid, agentSockets);
+}
+
+app.get('/api/agent-status', authMiddleware, async (req, res) => {
+  try {
+    const agentOnline = await isAgentOnlineForUser(req.userId);
+    res.json({ agentOnline });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to read agent status' });
+  }
 });
 
 io.use((socket, next) => {
@@ -130,12 +157,28 @@ io.on('connection', (socket) => {
   if (clientType === 'agent') {
     agentSockets.set(userId, socket);
     socket.join(`user:${userId}`);
+    touchAgentHeartbeat(userId).catch(() => {});
     console.log(`Agent online: user ${userId}`);
-    io.emit('agent_presence', { userId, online: true });
+    io.to(`user:${userId}`).emit('agent_presence', { userId, online: true });
   } else {
     socket.join(`user:${userId}`);
-    socket.emit('agent_presence', { userId, online: agentSockets.has(userId) });
+    isAgentOnlineForUser(userId)
+      .then((online) => {
+        socket.emit('agent_presence', { userId, online });
+      })
+      .catch(() => {
+        socket.emit('agent_presence', { userId, online: false });
+      });
   }
+
+  socket.on('AGENT_HEARTBEAT', async () => {
+    if (socket.clientType !== 'agent') return;
+    try {
+      await touchAgentHeartbeat(userId);
+    } catch (e) {
+      console.error(e);
+    }
+  });
 
   socket.on('RUN_SCRIPT', async ({ scriptId }, ack) => {
     try {
@@ -176,31 +219,8 @@ io.on('connection', (socket) => {
 
   socket.on('SCRIPT_STATUS', async ({ scriptId, status, error: errMsg }) => {
     if (socket.clientType !== 'agent') return;
-    if (!scriptId || !mongoose.isValidObjectId(scriptId)) return;
-    const allowed = ['running', 'success', 'failed', 'idle'];
-    if (!allowed.includes(status)) return;
     try {
-      const script = await Script.findOne({ _id: scriptId, userId });
-      if (!script) return;
-      script.status = status;
-      if (status === 'failed' && errMsg) {
-        script.lastError = String(errMsg).slice(0, 2000);
-      }
-      if (status === 'success' || status === 'idle') {
-        script.lastError = '';
-      }
-      await script.save();
-      io.to(`user:${userId}`).emit('script_status', {
-        scriptId,
-        status,
-        error: errMsg || script.lastError,
-      });
-      if (status === 'success' || status === 'failed') {
-        scheduleAutoIdleAfterTerminal(scriptId, userId, status);
-      }
-      if (status === 'idle') {
-        clearIdleResetTimer(scriptId);
-      }
+      await applyScriptStatus(userId, { scriptId, status, error: errMsg });
     } catch (e) {
       console.error(e);
     }
@@ -209,8 +229,15 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (clientType === 'agent' && agentSockets.get(userId) === socket) {
       agentSockets.delete(userId);
-      console.log(`Agent offline: user ${userId}`);
-      io.emit('agent_presence', { userId, online: false });
+      /** Keep agentHeartbeatAt — REST polling may still be active; Vercel sockets disconnect instantly. */
+      console.log(`Agent socket disconnected: user ${userId}`);
+      isAgentOnlineForUser(userId)
+        .then((online) => {
+          io.to(`user:${userId}`).emit('agent_presence', { userId, online });
+        })
+        .catch(() => {
+          io.to(`user:${userId}`).emit('agent_presence', { userId, online: false });
+        });
     }
   });
 });
