@@ -29,7 +29,7 @@ async function queueAgentCommand(userId, script) {
           scriptId: script._id.toString(),
           name: script.name,
           path: script.path,
-          type: script.type,
+          scriptType: script.type,
           queuedAt: new Date(),
         },
       },

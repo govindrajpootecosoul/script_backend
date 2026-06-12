@@ -8,11 +8,17 @@ const userSchema = new mongoose.Schema(
     agentHeartbeatAt: { type: Date, default: null },
     /** Queued when web triggers run via REST (Vercel / no sticky Socket.io). */
     pendingAgentCommand: {
-      scriptId: String,
-      name: String,
-      path: String,
-      type: String,
-      queuedAt: Date,
+      type: new mongoose.Schema(
+        {
+          scriptId: String,
+          name: String,
+          path: String,
+          scriptType: String,
+          queuedAt: Date,
+        },
+        { _id: false }
+      ),
+      default: undefined,
     },
   },
   { timestamps: true }

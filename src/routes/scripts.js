@@ -86,11 +86,17 @@ router.post('/:id/run', async (req, res) => {
       return res.status(503).json({ error: 'Agent offline — start the Electron app and sign in.' });
     }
     await queueAgentCommand(req.userId, script);
-    await applyScriptStatus(req.userId, { scriptId: script._id.toString(), status: 'running' });
+    const statusResult = await applyScriptStatus(req.userId, {
+      scriptId: script._id.toString(),
+      status: 'running',
+    });
+    if (!statusResult.ok) {
+      return res.status(400).json({ error: statusResult.error || 'Failed to update script status' });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to run script' });
+    res.status(500).json({ error: err.message || 'Failed to run script' });
   }
 });
 
